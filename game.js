@@ -14,6 +14,17 @@ ctx.scale(devicePixelRatio, devicePixelRatio);
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
 
+// Enemy spawn rules (balanced)
+const TRAIN_SIZE = 3; // cars in a train
+const TRAIN_SPACING = 100; // px between cars
+const MIN_GAP = 220; // min gap from spawn edge to trailing enemy
+const BASE_SPAWN_INTERVAL_MS = [1700, 2600]; // slower spawning
+const GROUP_CHANCE = 0.25; // 25% trains, 75% singles
+const MAX_ACTIVE_PER_LANE = 2; // hard cap per lane
+const GLOBAL_MAX_ENEMIES = 10; // overall cap
+// lane traffic multipliers ( >1 = quieter lane, spawns less often )
+const LANE_TRAFFIC_MULTIPLIER = [1.6, 1.0, 1.4, 1.0, 1.6, 1.2];
+
 // Tunable game variables - 6 strict lanes like Frogger
 const LANES = [
   120, // Lane 1 (top)
@@ -72,48 +83,179 @@ const carrot = {
   pulseDirection: 1,
 };
 
-// Enemy class
+// New enemy movement constants
+const MIN_ENEMY_GAP = 150; // Minimum distance between enemies in same lane
+const MAX_ENEMY_GAP = 300; // Maximum distance between enemies in same lane
+const RESPAWN_BUFFER = 100; // Extra distance beyond screen edge for respawn
+const SPEED_VARIATION = 0.0; // No speed variation within lanes - all enemies in same lane have same speed
+
+// Lane management system
+class LaneManager {
+  constructor() {
+    this.lanes = new Map();
+    this.initializeLanes();
+  }
+
+  initializeLanes() {
+    LANES.forEach((laneY, i) => {
+      const type = i % 2 === 0 ? "wolf" : "fox";
+      const direction = i % 2 === 0 ? 1 : -1;
+      const [minS, maxS] = SPEED_RANGES[type];
+      const speed = randBetween(minS, maxS); // constant per lane
+      this.lanes.set(laneY, {
+        y: laneY,
+        type,
+        direction,
+        speed,
+        enemies: [],
+        lastSpawnAt: 0,
+        nextSpawnDelay:
+          randBetween(BASE_SPAWN_INTERVAL_MS[0], BASE_SPAWN_INTERVAL_MS[1]) *
+          (LANE_TRAFFIC_MULTIPLIER[i] || 1),
+        maxActive: MAX_ACTIVE_PER_LANE,
+        trafficMult: LANE_TRAFFIC_MULTIPLIER[i] || 1,
+      });
+    });
+  }
+
+  addEnemy(e) {
+    const lane = this.lanes.get(e.laneY);
+    if (!lane) return;
+    lane.enemies.push(e);
+    // Keep order along travel direction (front first)
+    lane.enemies.sort((a, b) => (lane.direction > 0 ? b.x - a.x : a.x - b.x));
+  }
+
+  removeEnemy(e) {
+    const lane = this.lanes.get(e.laneY);
+    if (!lane) return;
+    const idx = lane.enemies.indexOf(e);
+    if (idx >= 0) lane.enemies.splice(idx, 1);
+  }
+
+  updateSpawns(nowMs) {
+    this.lanes.forEach((lane, idx) => {
+      // Respect per-lane and global caps
+      if (lane.enemies.length >= lane.maxActive) return;
+      if (enemies.length >= GLOBAL_MAX_ENEMIES) return;
+
+      if (nowMs - lane.lastSpawnAt < lane.nextSpawnDelay) return;
+
+      // Check gap from spawn edge to the trailing enemy
+      const spawnEdgeX =
+        lane.direction > 0 ? -OFFSCREEN_MARGIN : GAME_WIDTH + OFFSCREEN_MARGIN;
+      let trailing = null;
+      if (lane.enemies.length) {
+        trailing = lane.enemies.reduce((best, cur) => {
+          if (!best) return cur;
+          return lane.direction > 0
+            ? cur.x < best.x
+              ? cur
+              : best
+            : cur.x > best.x
+            ? cur
+            : best;
+        }, null);
+      }
+      if (trailing) {
+        const dist =
+          lane.direction > 0
+            ? Math.abs(trailing.x - -OFFSCREEN_MARGIN)
+            : Math.abs(GAME_WIDTH + OFFSCREEN_MARGIN - trailing.x);
+        if (dist < MIN_GAP) return;
+      }
+
+      const isTrain = Math.random() < GROUP_CHANCE;
+      const count = Math.min(
+        isTrain ? TRAIN_SIZE : 1,
+        lane.maxActive - lane.enemies.length,
+        GLOBAL_MAX_ENEMIES - enemies.length
+      );
+
+      for (let i = 0; i < count; i++) {
+        const x =
+          lane.direction > 0
+            ? spawnEdgeX - i * TRAIN_SPACING
+            : spawnEdgeX + i * TRAIN_SPACING;
+
+        const enemy = new Enemy(
+          lane.type,
+          lane.y,
+          x,
+          lane.speed,
+          lane.direction,
+          lane.speed
+        );
+        if (lane.type === "wolf" && window.wolfSprite)
+          enemy.sprite = window.wolfSprite;
+        if (lane.type === "fox" && window.foxSprite)
+          enemy.sprite = window.foxSprite;
+
+        enemies.push(enemy);
+        this.addEnemy(enemy);
+      }
+
+      lane.lastSpawnAt = nowMs;
+      // New randomized delay, multiplied for quieter lanes; add small extra cooldown after a train
+      const baseDelay = randBetween(
+        BASE_SPAWN_INTERVAL_MS[0],
+        BASE_SPAWN_INTERVAL_MS[1]
+      );
+      lane.nextSpawnDelay =
+        baseDelay * lane.trafficMult + (count > 1 ? 500 : 0);
+    });
+  }
+}
+
+// Global lane manager
+let laneManager = new LaneManager();
+
+function randBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+// Enemy class with improved movement
 class Enemy {
-  constructor(type, laneY, x, speed, direction) {
+  constructor(type, laneY, x, speed, direction, baseSpeed) {
     this.type = type;
     this.laneY = laneY;
     this.x = x;
-    this.y = laneY; // Set the Y position to the lane
+    this.y = laneY;
     this.speed = speed;
-    this.direction = direction; // 1 for right, -1 for left
+    this.baseSpeed = baseSpeed;
+    this.direction = direction;
     this.sprite = null;
     this.width = SPRITE_SIZES[type];
-    this.height = SPRITE_SIZES[type] * 0.8; // Approximate aspect ratio
-    this.hitboxWidth = this.width * 0.8; // 20% smaller hitbox
+    this.height = SPRITE_SIZES[type] * 0.8;
+    this.hitboxWidth = this.width * 0.8;
     this.hitboxHeight = this.height * 0.8;
+    this.isActive = true;
   }
 
+  // In Enemy class
   update() {
+    if (!this.isActive) return;
     this.x += this.speed * this.direction;
-
-    // Respawn when off-screen
-    if (this.direction > 0 && this.x > GAME_WIDTH + OFFSCREEN_MARGIN) {
-      this.respawn();
-    } else if (this.direction < 0 && this.x < -OFFSCREEN_MARGIN) {
-      this.respawn();
-    }
+    if (this.direction > 0 && this.x > GAME_WIDTH + OFFSCREEN_MARGIN)
+      this.deactivate();
+    if (this.direction < 0 && this.x < -OFFSCREEN_MARGIN) this.deactivate();
+  }
+  deactivate() {
+    this.isActive = false;
+    laneManager.removeEnemy(this);
   }
 
-  respawn() {
-    if (this.direction > 0) {
-      // Moving right, spawn on left
-      this.x = -OFFSCREEN_MARGIN;
-    } else {
-      // Moving left, spawn on right
-      this.x = GAME_WIDTH + OFFSCREEN_MARGIN;
-    }
-
-    // Randomize speed within range
-    const [minSpeed, maxSpeed] = SPEED_RANGES[this.type];
-    this.speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+  deactivate() {
+    this.isActive = false;
+    laneManager.removeEnemy(this);
   }
 
   draw() {
+    if (!this.isActive) return;
+
     if (this.sprite && this.sprite.complete) {
       // Draw drop shadow
       ctx.save();
@@ -275,6 +417,7 @@ let gameState = {
   assetsLoadedCount: 0,
   lives: GAME_STATS.LIVES,
   score: 0,
+  gameTime: 0, // New game time
 };
 
 // Input handling
@@ -636,48 +779,17 @@ function restartGame() {
   gameState.gameOver = false;
   gameState.winMessageTimer = 0;
   gameState.loseMessageTimer = 0;
+  gameState.gameTime = 0;
   resetRabbit();
+  laneManager = new LaneManager(); // Reset lane manager
+  enemies = []; // Clear existing enemies
+  initializeEnemies(); // Re-initialize enemies with new manager
 }
 
 function initializeEnemies() {
   enemies = [];
-  console.log("Initializing enemies...");
-
-  // Create 2 enemies per lane (6 lanes total = 12 enemies)
-  for (let laneIndex = 0; laneIndex < LANES.length; laneIndex++) {
-    const laneY = LANES[laneIndex];
-    const direction = laneIndex % 2 === 0 ? 1 : -1; // Alternate directions per lane
-
-    for (let enemyIndex = 0; enemyIndex < 2; enemyIndex++) {
-      const type = laneIndex % 2 === 0 ? "wolf" : "fox";
-
-      // Stagger enemies within the lane
-      let x;
-      if (direction > 0) {
-        // Moving right, start from left
-        x = -OFFSCREEN_MARGIN - enemyIndex * LANE_SPACING;
-      } else {
-        // Moving left, start from right
-        x = GAME_WIDTH + OFFSCREEN_MARGIN + enemyIndex * LANE_SPACING;
-      }
-
-      // Random speed within range
-      const [minSpeed, maxSpeed] = SPEED_RANGES[type];
-      const speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
-
-      const enemy = new Enemy(type, laneY, x, speed, direction);
-
-      // Assign sprite if available
-      if (type === "wolf" && window.wolfSprite) {
-        enemy.sprite = window.wolfSprite;
-      } else if (type === "fox" && window.foxSprite) {
-        enemy.sprite = window.foxSprite;
-      }
-
-      enemies.push(enemy);
-    }
-  }
-  console.log(`Total enemies created: ${enemies.length}`);
+  laneManager = new LaneManager();
+  // no instant flood; first spawns come after initial delays
 }
 
 function showWinMessage() {
@@ -753,8 +865,29 @@ function updateAnimations() {
 }
 
 function updateEnemies() {
-  enemies.forEach((enemy) => {
-    enemy.update();
+  gameState.gameTime += 16; // ~60fps
+  enemies.forEach((e) => e.update());
+  laneManager.updateSpawns(gameState.gameTime);
+  enemies = enemies.filter((e) => e.isActive);
+}
+
+function separateLaneMates() {
+  const GAP = MIN_SPAWN_GAP * 0.9;
+  // For each lane, ensure trailing enemy doesn’t sit on top of leader
+  LANES.forEach((laneY) => {
+    const mates = enemies.filter((e) => e.laneY === laneY);
+    mates.sort((a, b) => a.x - b.x); // left→right
+    for (let i = 1; i < mates.length; i++) {
+      const prev = mates[i - 1],
+        cur = mates[i];
+      if (cur.direction !== prev.direction) continue;
+      const dist = Math.abs(cur.x - prev.x);
+      if (dist < GAP) {
+        // Nudge trailing one back slightly
+        cur.x += cur.direction > 0 ? -2 : 2;
+        // Or: cur.speed = Math.min(cur.speed, prev.speed);
+      }
+    }
   });
 }
 
@@ -814,6 +947,8 @@ function updateRabbit() {
 
   // Check for collision with enemies (circle vs rect)
   enemies.forEach((enemy) => {
+    if (!enemy.isActive) return;
+
     const enemyHitbox = enemy.getHitbox();
     if (
       checkCircleRectCollision(
