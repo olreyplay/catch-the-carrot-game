@@ -139,7 +139,9 @@ class LaneManager {
       if (lane.enemies.length >= lane.maxActive) return;
       if (enemies.length >= GLOBAL_MAX_ENEMIES) return;
 
-      if (nowMs - lane.lastSpawnAt < lane.nextSpawnDelay) return;
+      // Allow immediate spawning when game starts (first 100ms)
+      const timeSinceLastSpawn = nowMs - lane.lastSpawnAt;
+      if (timeSinceLastSpawn < lane.nextSpawnDelay && nowMs > 100) return;
 
       // Check gap from spawn edge to the trailing enemy
       const spawnEdgeX =
@@ -792,6 +794,14 @@ function startGame() {
     modal.classList.remove("open");
   }
 
+  // Reset game time to 0 for immediate enemy spawning
+  gameState.gameTime = 0;
+
+  // Reset lane manager spawn timers for immediate spawning
+  laneManager.lanes.forEach((lane) => {
+    lane.lastSpawnAt = 0;
+  });
+
   // Set game phase to playing
   gameState.phase = "playing";
 
@@ -829,7 +839,10 @@ function restartGame() {
 function initializeEnemies() {
   enemies = [];
   laneManager = new LaneManager();
-  // no instant flood; first spawns come after initial delays
+  // Reset spawn timers to allow immediate spawning
+  laneManager.lanes.forEach((lane) => {
+    lane.lastSpawnAt = 0;
+  });
 }
 
 function showWinMessage() {
