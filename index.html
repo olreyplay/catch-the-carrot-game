@@ -16,12 +16,30 @@
     <div class="game-container">
       <h1>Catch the Carrot</h1>
       <canvas id="gameCanvas" width="800" height="600" tabindex="0"></canvas>
-      <div class="instructions">
-        <p>Use arrow keys to move the rabbit</p>
-        <p>Reach the carrot to win!</p>
-        <p>Avoid the wolves and foxes!</p>
+    </div>
+
+    <!-- Intro Modal -->
+    <div
+      id="introModal"
+      class="modal open"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modalTitle"
+    >
+      <div class="modal-content">
+        <h2 id="modalTitle">How to Play</h2>
+        <div class="rules">
+          <ul>
+            <li>Use arrow keys to move the rabbit</li>
+            <li>Reach the carrot to win</li>
+            <li>Avoid the wolves and foxes</li>
+          </ul>
+        </div>
+        <button id="startButton" class="start-button">Start Game</button>
+        <p class="hint">Press Enter or Space to start</p>
       </div>
     </div>
+
     <script src="game.js"></script>
   </body>
 </html>

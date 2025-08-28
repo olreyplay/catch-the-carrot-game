@@ -42,12 +42,110 @@ h1 {
   box-shadow: 0 5px 20px rgba(255, 140, 0, 0.3);
 }
 
-.instructions {
-  color: #2e8b57;
-  font-size: 1.1em;
-  line-height: 1.6;
+/* Modal Styles */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
-.instructions p {
-  margin: 5px 0;
+.modal.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal-content {
+  background: white;
+  padding: 40px;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  text-align: center;
+  max-width: 500px;
+  width: 90%;
+  transform: scale(0.9);
+  transition: transform 0.3s ease;
+}
+
+.modal.open .modal-content {
+  transform: scale(1);
+}
+
+.modal-content h2 {
+  color: #2e8b57;
+  font-size: 2.2em;
+  margin-bottom: 30px;
+  font-family: "Fredoka One", Arial, sans-serif;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.rules {
+  margin-bottom: 30px;
+}
+
+.rules ul {
+  list-style: none;
+  padding: 0;
+}
+
+.rules li {
+  color: #2e8b57;
+  font-size: 1.3em;
+  margin: 15px 0;
+  padding: 10px 0;
+  position: relative;
+  padding-left: 30px;
+}
+
+.rules li::before {
+  content: "•";
+  color: #ff8c00;
+  font-size: 1.5em;
+  position: absolute;
+  left: 0;
+  top: 8px;
+}
+
+.start-button {
+  background: linear-gradient(135deg, #ff8c00, #ffa500);
+  color: white;
+  border: none;
+  padding: 15px 40px;
+  font-size: 1.4em;
+  font-weight: bold;
+  border-radius: 50px;
+  cursor: pointer;
+  box-shadow: 0 8px 25px rgba(255, 140, 0, 0.3);
+  transition: all 0.3s ease;
+  margin-bottom: 20px;
+  font-family: "Fredoka One", Arial, sans-serif;
+}
+
+.start-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 35px rgba(255, 140, 0, 0.4);
+  background: linear-gradient(135deg, #ffa500, #ff8c00);
+}
+
+.start-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.5),
+    0 8px 25px rgba(255, 140, 0, 0.3);
+}
+
+.hint {
+  color: #666;
+  font-size: 1em;
+  font-style: italic;
+  margin: 0;
 }

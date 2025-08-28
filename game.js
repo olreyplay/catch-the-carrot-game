@@ -406,6 +406,7 @@ let enemies = [];
 
 // Game state
 let gameState = {
+  phase: "intro", // 'intro' | 'playing' | 'paused' | 'gameover'
   hasWon: false,
   hasLost: false,
   gameOver: false,
@@ -433,6 +434,12 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
   }
 
+  // Handle intro modal - Enter or Space to start game
+  if (gameState.phase === "intro" && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    startGame();
+  }
+
   // Handle restart on game over
   if (gameState.gameOver && e.key === "Enter") {
     restartGame();
@@ -445,7 +452,14 @@ document.addEventListener("keyup", (e) => {
 
 // Focus canvas on load for immediate keyboard input
 window.addEventListener("load", () => {
-  canvas.focus();
+  // Focus the start button for accessibility
+  const startButton = document.getElementById("startButton");
+  if (startButton) {
+    startButton.focus();
+  }
+
+  // Add click event listener for start button
+  startButton.addEventListener("click", startGame);
 });
 
 // Asset loading
@@ -771,7 +785,22 @@ function resetRabbit() {
   rabbit.isMoving = false;
 }
 
+function startGame() {
+  // Hide the modal
+  const modal = document.getElementById("introModal");
+  if (modal) {
+    modal.classList.remove("open");
+  }
+
+  // Set game phase to playing
+  gameState.phase = "playing";
+
+  // Focus the canvas for immediate keyboard control
+  canvas.focus();
+}
+
 function restartGame() {
+  gameState.phase = "intro"; // Reset to intro phase
   gameState.lives = GAME_STATS.LIVES;
   gameState.score = 0;
   gameState.hasWon = false;
@@ -784,6 +813,17 @@ function restartGame() {
   laneManager = new LaneManager(); // Reset lane manager
   enemies = []; // Clear existing enemies
   initializeEnemies(); // Re-initialize enemies with new manager
+
+  // Show the modal again
+  const modal = document.getElementById("introModal");
+  if (modal) {
+    modal.classList.add("open");
+    // Focus the start button
+    const startButton = document.getElementById("startButton");
+    if (startButton) {
+      startButton.focus();
+    }
+  }
 }
 
 function initializeEnemies() {
@@ -848,14 +888,14 @@ function showGameOverMessage() {
 function updateAnimations() {
   animationTimer++;
 
-  // Update rabbit hop animation
-  if (rabbit.isMoving) {
+  // Update rabbit hop animation (only when in playing phase and moving)
+  if (gameState.phase === "playing" && rabbit.isMoving) {
     rabbit.hopOffset = Math.sin(animationTimer * 0.3) * 3; // Small hop while moving
   } else {
-    rabbit.hopOffset = 0; // No hop when stationary
+    rabbit.hopOffset = 0; // No hop when stationary or not playing
   }
 
-  // Update carrot pulse animation
+  // Update carrot pulse animation (always run for visual appeal)
   carrot.pulseScale += 0.005 * carrot.pulseDirection;
   if (carrot.pulseScale >= 1.1) {
     carrot.pulseDirection = -1;
@@ -865,10 +905,13 @@ function updateAnimations() {
 }
 
 function updateEnemies() {
-  gameState.gameTime += 16; // ~60fps
-  enemies.forEach((e) => e.update());
-  laneManager.updateSpawns(gameState.gameTime);
-  enemies = enemies.filter((e) => e.isActive);
+  // Only advance game time and update enemies when playing
+  if (gameState.phase === "playing") {
+    gameState.gameTime += 16; // ~60fps
+    enemies.forEach((e) => e.update());
+    laneManager.updateSpawns(gameState.gameTime);
+    enemies = enemies.filter((e) => e.isActive);
+  }
 }
 
 function separateLaneMates() {
@@ -892,8 +935,14 @@ function separateLaneMates() {
 }
 
 function updateRabbit() {
-  // Don't update rabbit position if game is won, lost, or over
-  if (gameState.hasWon || gameState.hasLost || gameState.gameOver) return;
+  // Don't update rabbit position if game is won, lost, over, or not in playing phase
+  if (
+    gameState.hasWon ||
+    gameState.hasLost ||
+    gameState.gameOver ||
+    gameState.phase !== "playing"
+  )
+    return;
 
   // Check if rabbit is moving
   const wasMoving = rabbit.isMoving;
@@ -975,6 +1024,9 @@ function updateRabbit() {
 }
 
 function updateGameState() {
+  // Only update game state when playing
+  if (gameState.phase !== "playing") return;
+
   if (gameState.hasWon && gameState.winMessageTimer > 0) {
     gameState.winMessageTimer--;
     if (gameState.winMessageTimer === 0) {
@@ -991,6 +1043,11 @@ function updateGameState() {
       gameState.hasLost = false;
       resetRabbit();
     }
+  }
+
+  // Set game over phase when lives are depleted
+  if (gameState.gameOver) {
+    gameState.phase = "gameover";
   }
 }
 
@@ -1018,13 +1075,15 @@ function gameLoop() {
   // Draw UI
   drawUI();
 
-  // Update animations
+  // Update animations (always run for visual appeal)
   updateAnimations();
 
-  // Update game objects
-  updateEnemies();
-  updateRabbit();
-  updateGameState();
+  // Only update game logic when in playing phase
+  if (gameState.phase === "playing") {
+    updateEnemies();
+    updateRabbit();
+    updateGameState();
+  }
 
   // Show messages based on game state
   if (gameState.gameOver) {
